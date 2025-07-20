@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Weather App with Interactive Map</title>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(to right, #83a4d4, #b6fbff);
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .weather-container {
+      background: white;
+      padding: 2rem;
+      border-radius: 10px;
+      text-align: center;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      width: 90%;
+      max-width: 400px;
+      margin-bottom: 20px;
+    }
+
+    input {
+      padding: 10px;
+      font-size: 16px;
+      width: 70%;
+      margin-bottom: 1rem;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      background-color: #008CBA;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+
+    .result {
+      margin-top: 1rem;
+      text-align: left;
+    }
+
+    .result p {
+      margin: 6px 0;
+    }
+
+    .loading {
+      display: none;
+      font-style: italic;
+      color: #555;
+    }
+
+    .error {
+      color: red;
+    }
+
+    #map {
+      height: 400px;
+      width: 90%;
+      max-width: 600px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    }
+  </style>
+</head>
+<body>
+  <div class="weather-container">
+    <h1>🌦️ Weather App</h1>
+    <input
+      type="text"
+      id="cityInput"
+      placeholder="Enter city name or click map"
+      aria-label="Enter city name or click map"
+      onkeypress="if(event.key === 'Enter') getWeatherByCity()"
+    />
+    <button onclick="getWeatherByCity()" id="searchButton">Search</button>
+    <div id="loading" class="loading">Loading...</div>
+    <div id="weatherResult" class="result"></div>
+  </div>
+  <div id="map"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // Initialize map
+    const map = L.map('map').setView([51.505, -0.09], 2); // Default view (world)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(map);
+
+    // Note: API key should be stored server-side in production
+    const apiKey = "18c513f1dc47e12c218256007c92e4c4"; // Replace with your own or backend call
+    const searchButton = document.getElementById("searchButton");
+    const loadingDiv = document.getElementById("loading");
+    const resultDiv = document.getElementById("weatherResult");
+    let marker = null; // To track the marker on the map
+
+    // Fetch weather by city name
+    async function getWeatherByCity() {
+      const cityInput = document.getElementById("cityInput");
+      const city = cityInput.value.trim();
+
+      // Clear previous results and show loading state
+      resultDiv.innerHTML = "";
+      loadingDiv.style.display = "block";
+      searchButton.disabled = true;
+
+      if (!city) {
+        resultDiv.innerHTML = '<p class="error">Please enter a city name.</p>';
+        loadingDiv.style.display = "none";
+        searchButton.disabled = false;
+        return;
+      }
+
+      const sanitizedCity = city.replace(/[^a-zA-Z0-9\s]/g, "");
+      if (sanitizedCity !== city) {
+        resultDiv.innerHTML =
+          '<p class="error">Invalid characters in city name. Use letters and numbers only.</p>';
+        loadingDiv.style.display = "none";
+        searchButton.disabled = false;
+        return;
+      }
+
+      const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(
+        city
+      )}&appid=${apiKey}&units=metric`;
+
+      try {
+        const response = await fetch(url);
+        loadingDiv.style.display = "none";
+        searchButton.disabled = false;
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            resultDiv.innerHTML = '<p class="error">City not found! Try again.</p>';
+          } else if (response.status === 401) {
+            resultDiv.innerHTML =
+              '<p class="error">Invalid API key. Please contact the administrator.</p>';
+          } else {
+            resultDiv.innerHTML =
+              '<p class="error">Failed to fetch weather data. Please try again later.</p>';
+          }
+          return;
+        }
+
+        const data = await response.json();
+        const { name, main, weather, wind, coord } = data;
+
+        // Update map to center on city coordinates
+        map.setView([coord.lat, coord.lon], 10);
+        if (marker) map.removeLayer(marker);
+        marker = L.marker([coord.lat, coord.lon]).addTo(map);
+
+        resultDiv.innerHTML = `
+          <h2>${name}</h2>
+          <p><strong>Temperature:</strong> ${main.temp}°C</p>
+          <p><strong>Condition:</strong> ${weather[0].main} - ${weather[0].description}</p>
+          <p><strong>Humidity:</strong> ${main.humidity}%</p>
+          <p><strong>Pressure:</strong> ${main.pressure} hPa</p>
+          <p><strong>Wind Speed:</strong> ${wind.speed} m/s</p>
+        `;
+      } catch (error) {
+        loadingDiv.style.display = "none";
+        searchButton.disabled = false;
+        resultDiv.innerHTML =
+          '<p class="error">Something went wrong. Please check your connection and try again.</p>';
+        console.error("Error fetching weather:", error);
+      }
+    }
+
+    // Fetch weather by coordinates
+    async function getWeatherByCoords(lat, lon) {
+      const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`;
+
+      resultDiv.innerHTML = "";
+      loadingDiv.style.display = "block";
+      searchButton.disabled = true;
+
+      try {
+        const response = await fetch(url);
+        loadingDiv.style.display = "none";
+        searchButton.disabled = false;
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            resultDiv.innerHTML = '<p class="error">Location not found! Try again.</p>';
+          } else if (response.status === 401) {
+            resultDiv.innerHTML =
+              '<p class="error">Invalid API key. Please contact the administrator.</p>';
+          } else {
+            resultDiv.innerHTML =
+              '<p class="error">Failed to fetch weather data. Please try again later.</p>';
+          }
+          return;
+        }
+
+        const data = await response.json();
+        const { name, main, weather, wind, coord } = data;
+
+        // Update marker on map
+        if (marker) map.removeLayer(marker);
+        marker = L.marker([coord.lat, coord.lon]).addTo(map);
+
+        // Update input field with city name
+        document.getElementById("cityInput").value = name || `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+
+        resultDiv.innerHTML = `
+          <h2>${name || "Location"}</h2>
+          <p><strong>Temperature:</strong> ${main.temp}°C</p>
+          <p><strong>Condition:</strong> ${weather[0].main} - ${weather[0].description}</p>
+          <p><strong>Humidity:</strong> ${main.humidity}%</p>
+          <p><strong>Pressure:</strong> ${main.pressure} hPa</p>
+          <p><strong>Wind Speed:</strong> ${wind.speed} m/s</p>
+        `;
+      } catch (error) {
+        loadingDiv.style.display = "none";
+        searchButton.disabled = false;
+        resultDiv.innerHTML =
+          '<p class="error">Something went wrong. Please check your connection and try again.</p>';
+        console.error("Error fetching weather:", error);
+      }
+    }
+
+    // Handle map click event
+    map.on('click', function (e) {
+      const { lat, lng } = e.latlng;
+      getWeatherByCoords(lat, lng);
+    });
+  </script>
+</body>
+</html>
